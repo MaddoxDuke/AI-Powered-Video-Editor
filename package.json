@@ -1,0 +1,75 @@
+{
+  "name": "video-editor",
+  "version": "0.1.0",
+  "description": "AI-assisted YouTube video editor for automotive build channels",
+  "main": "./out/main/index.js",
+  "author": "Maddox Duke",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
+    "keytar": "^7.9.0",
+    "wavesurfer.js": "^7.8.7",
+    "zustand": "^5.0.4"
+  },
+  "devDependencies": {
+    "@electron-toolkit/eslint-config-prettier": "^2.0.0",
+    "@electron-toolkit/eslint-config-ts": "^2.0.0",
+    "@electron-toolkit/preload": "^3.0.1",
+    "@electron-toolkit/tsconfig": "^1.0.1",
+    "@electron-toolkit/utils": "^3.0.0",
+    "@tailwindcss/vite": "^4.1.4",
+    "@types/node": "^22.13.1",
+    "@types/react": "^19.0.6",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.21",
+    "electron": "^35.1.4",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^3.1.0",
+    "postcss": "^8.5.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwindcss": "^4.1.4",
+    "typescript": "^5.7.3",
+    "vite": "^6.3.1"
+  },
+  "build": {
+    "appId": "com.maddox.video-editor",
+    "productName": "Video Editor",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] }
+      ],
+      "category": "public.app-category.video",
+      "identity": null
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "node_modules/ffmpeg-static",
+        "to": "ffmpeg-static",
+        "filter": ["**/*"]
+      },
+      {
+        "from": "node_modules/ffprobe-static",
+        "to": "ffprobe-static",
+        "filter": ["**/*"]
+      }
+    ]
+  }
+}

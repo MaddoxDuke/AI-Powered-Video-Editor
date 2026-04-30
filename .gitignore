@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+
+# Electron builder output
+release/
+
+# Render artifacts — never commit large video files or temp segments
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+.render-tmp/
+
+# Editor / OS
+.DS_Store
+*.local
+workspace/
+.vscode/settings.json
+
+# Secrets (belt-and-suspenders — key is in Keychain, but just in case)
+.env
+.env.*
+secrets.*
