@@ -7,6 +7,7 @@ export type ClipMeta = {
   hasVoice: boolean
   expectedRoll: 'a' | 'b'
   warning?: string
+  description?: string   // AI-generated vision description (B-roll only)
 }
 
 // ──────────────────────────────────────────────
@@ -23,6 +24,12 @@ export type WordSegment = {
 export type Transcript = {
   segments: WordSegment[]
 }
+
+// ──────────────────────────────────────────────
+// Silence map (per-clip silence gaps from FFmpeg silencedetect)
+// ──────────────────────────────────────────────
+export type SilenceRange = { start: number; end: number }
+export type SilenceMap = Record<string, SilenceRange[]>  // clipId → silence gaps
 
 // ──────────────────────────────────────────────
 // Edit Decision List
@@ -46,12 +53,23 @@ export type EDLEntry =
         aRollEnd: number
       }
       reason: string
+      timelapse?: boolean
+      timelapseSpeed?: number       // e.g. 8 = 8× speed; output capped at 8s
+      transition?: boolean
+      transitionTrim?: 'start' | 'middle' | 'end'  // which portion to keep after capping
     }
+
+export type EDLChapter = {
+  title: string
+  aRollClipId: string  // which A-roll clip this chapter starts at
+  aRollStart: number   // approximate time within that clip
+}
 
 export type EDL = {
   entries: EDLEntry[]
   totalDuration: number
   rationale: string
+  chapters?: EDLChapter[]
 }
 
 // ──────────────────────────────────────────────
@@ -94,6 +112,7 @@ export type AppSettings = {
   ollamaModel: string
   openaiCompatEndpoint: string  // e.g. http://localhost:1234/v1 for LM Studio
   openaiCompatModel: string     // model name as shown in LM Studio
+  anthropicModel: string        // e.g. claude-sonnet-4-5 or claude-opus-4-5
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -105,7 +124,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ollamaEndpoint: 'http://localhost:11434',
   ollamaModel: 'llama3.1:8b',
   openaiCompatEndpoint: 'http://127.0.0.1:1234/v1',
-  openaiCompatModel: ''
+  openaiCompatModel: '',
+  anthropicModel: 'claude-sonnet-4-5'
 }
 
 // ──────────────────────────────────────────────
@@ -135,7 +155,13 @@ export interface ElectronAPI {
   llmCheck: (provider: LLMProvider, endpoint?: string) => Promise<LLMStatus>
   planEdit: (transcript: Transcript, aRoll: ClipMeta[], bRoll: ClipMeta[], settings: AppSettings, apiKey: string) => Promise<{ ok: boolean; edl?: EDL; error?: string }>
   reviseEdit: (edl: EDL, transcript: Transcript, aRoll: ClipMeta[], bRoll: ClipMeta[], request: string, settings: AppSettings, apiKey: string) => Promise<{ ok: boolean; edl?: EDL; error?: string }>
-  renderCut: (edl: EDL, aRoll: ClipMeta[], bRoll: ClipMeta[], transcript: Transcript, exportFolder: string) => Promise<{ ok: boolean; outputPath?: string; transcriptPath?: string; error?: string }>
+  renderCut: (edl: EDL, aRoll: ClipMeta[], bRoll: ClipMeta[], transcript: Transcript, exportFolder: string, draft?: boolean) => Promise<{ ok: boolean; outputPath?: string; transcriptPath?: string; chaptersPath?: string; error?: string }>
+  brollDescribe: (clips: ClipMeta[], folder: string, apiKey: string, force?: boolean) => Promise<Record<string, string>>
+  brollLoadDescriptions: (folder: string) => Promise<Record<string, string>>
+  edlAutoSave: (edl: EDL) => Promise<{ ok: boolean; error?: string }>
+  edlSaveAs: (edl: EDL) => Promise<{ ok: boolean; canceled?: boolean; filePath?: string; error?: string }>
+  edlLoad: () => Promise<{ ok: boolean; canceled?: boolean; edl?: EDL; filePath?: string; error?: string }>
+  edlLoadLast: () => Promise<{ ok: boolean; edl?: EDL | null; error?: string }>
   transcribeCheck: () => Promise<{ ok: boolean; python?: string; error?: string }>
   transcribeAll: (
     clips: Array<{ path: string }>,

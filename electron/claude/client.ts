@@ -51,7 +51,7 @@ function getAnthropicClient(apiKey: string): Anthropic {
   return _anthropicClient
 }
 
-async function callAnthropic(req: LLMRequest, apiKey: string): Promise<LLMResponse> {
+async function callAnthropic(req: LLMRequest, apiKey: string, model = 'claude-sonnet-4-5'): Promise<LLMResponse> {
   const client = getAnthropicClient(apiKey)
 
   const tools: Anthropic.Tool[] | undefined = req.tools?.map((t) => ({
@@ -68,7 +68,7 @@ async function callAnthropic(req: LLMRequest, apiKey: string): Promise<LLMRespon
       : undefined
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-5',
+    model,
     max_tokens: req.maxTokens ?? 4096,
     system: [
       {
@@ -395,7 +395,7 @@ export async function llmCall(
 ): Promise<LLMResponse> {
   if (settings.llmProvider === 'anthropic') {
     if (!apiKey) throw new Error('Anthropic API key not set. Add it in Settings.')
-    return callAnthropic(req, apiKey)
+    return callAnthropic(req, apiKey, settings.anthropicModel || 'claude-sonnet-4-5')
   }
 
   if (settings.llmProvider === 'openai-compat') {

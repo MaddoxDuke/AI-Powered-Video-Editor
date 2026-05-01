@@ -26,13 +26,25 @@ const api = {
     ipcRenderer.invoke('plan-edit:revise', edl, transcript, aRoll, bRoll, request, settings, apiKey),
 
   // Render
-  renderCut: (edl: unknown, aRoll: unknown, bRoll: unknown, transcript: unknown, exportFolder: string) =>
-    ipcRenderer.invoke('render-cut:render', edl, aRoll, bRoll, transcript, exportFolder),
+  renderCut: (edl: unknown, aRoll: unknown, bRoll: unknown, transcript: unknown, exportFolder: string, draft = false) =>
+    ipcRenderer.invoke('render-cut:render', edl, aRoll, bRoll, transcript, exportFolder, draft),
+
+  // B-roll vision description
+  brollDescribe: (clips: unknown, folder: string, apiKey: string, force?: boolean) =>
+    ipcRenderer.invoke('broll:describe', clips, folder, apiKey, force),
+  brollLoadDescriptions: (folder: string) =>
+    ipcRenderer.invoke('broll:load-descriptions', folder),
 
   // Transcription
   transcribeCheck: () => ipcRenderer.invoke('transcribe:check'),
   transcribeAll: (clips: Array<{ path: string }>, model: string) =>
     ipcRenderer.invoke('transcribe:all', clips, model),
+
+  // EDL file persistence
+  edlAutoSave: (edl: unknown) => ipcRenderer.invoke('edl-file:auto-save', edl),
+  edlSaveAs: (edl: unknown) => ipcRenderer.invoke('edl-file:save-as', edl),
+  edlLoad: () => ipcRenderer.invoke('edl-file:load'),
+  edlLoadLast: () => ipcRenderer.invoke('edl-file:load-last'),
 
   // Push events from main → renderer
   on: (channel: string, fn: (...args: unknown[]) => void) => {

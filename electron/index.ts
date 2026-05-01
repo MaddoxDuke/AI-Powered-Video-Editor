@@ -7,6 +7,8 @@ import { registerTranscribeHandlers } from './ipc/transcribe'
 import { registerLLMHandlers } from './ipc/llm'
 import { registerPlanEditHandlers } from './ipc/plan-edit'
 import { registerRenderCutHandlers } from './ipc/render-cut'
+import { registerBRollDescribeHandlers } from './ipc/broll-describe'
+import { registerEDLFileHandlers } from './ipc/edl-file'
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -53,6 +55,8 @@ app.whenReady().then(() => {
   registerLLMHandlers(ipcMain)
   registerPlanEditHandlers(ipcMain)
   registerRenderCutHandlers(ipcMain)
+  registerBRollDescribeHandlers(ipcMain)
+  registerEDLFileHandlers(ipcMain)
 
   createWindow()
 

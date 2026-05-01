@@ -3,7 +3,8 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { llmCall } from '../claude/client'
 import { proposeEDLTool } from '../claude/tools'
-import type { Transcript, ClipMeta, EDL, EDLEntry, AppSettings } from '@shared/types'
+import { detectSilences } from '../pipeline/ffmpeg'
+import type { Transcript, ClipMeta, EDL, EDLEntry, EDLChapter, SilenceMap, AppSettings } from '@shared/types'
 
 function loadPrompt(name: string): string {
   const candidates = [
@@ -64,9 +65,13 @@ function fmtTime(sec: number): string {
 
 function buildBRollContext(bRollClips: ClipMeta[]): string {
   if (!bRollClips.length) return '## B-roll inventory\n(none)\n'
+  // Filter out very short clips that can't be meaningfully used as overlays
+  const usable = bRollClips.filter((c) => c.duration >= 1.5)
+  if (!usable.length) return '## B-roll inventory\n(none usable)\n'
   const lines = ['## B-roll inventory\n']
-  for (const c of bRollClips) {
-    lines.push(`- ${clipId(c.path)}  (${c.duration.toFixed(1)}s)`)
+  for (const c of usable) {
+    const desc = c.description ? ` — ${c.description}` : ''
+    lines.push(`- ${clipId(c.path)}  (${c.duration.toFixed(1)}s)${desc}`)
   }
   return lines.join('\n')
 }
@@ -74,6 +79,44 @@ function buildBRollContext(bRollClips: ClipMeta[]): string {
 function clipId(path: string): string {
   const base = path.split('/').pop() ?? path
   return base.replace(/\.[^.]+$/, '')
+}
+
+/**
+ * Runs silencedetect on all A-roll clips in parallel and returns a SilenceMap.
+ * Errors per-clip are swallowed — missing silence data just means Claude won't
+ * have that hint for that clip.
+ */
+async function buildSilenceMap(aRollClips: ClipMeta[]): Promise<SilenceMap> {
+  const results = await Promise.allSettled(
+    aRollClips.map(async (c) => {
+      const silences = await detectSilences(c.path)
+      return { id: clipId(c.path), silences }
+    })
+  )
+  const map: SilenceMap = {}
+  for (const r of results) {
+    if (r.status === 'fulfilled') map[r.value.id] = r.value.silences
+  }
+  return map
+}
+
+/**
+ * Formats the silence map as a compact context block.
+ * Only includes clips that have at least one silence gap.
+ * Format per clip: [0:45–0:52] [1:30–1:31] ...
+ */
+function buildSilenceContext(silenceMap: SilenceMap): string {
+  const entries = Object.entries(silenceMap).filter(([, gaps]) => gaps.length > 0)
+  if (!entries.length) return ''
+
+  const lines = ['## Silence gaps (≥0.8s, good cut points)\n']
+  for (const [id, gaps] of entries) {
+    const formatted = gaps
+      .map((g) => `[${fmtTime(Math.round(g.start))}–${g.end === Infinity ? 'end' : fmtTime(Math.round(g.end))}]`)
+      .join(' ')
+    lines.push(`### ${id}\n${formatted}`)
+  }
+  return lines.join('\n') + '\n'
 }
 
 /**
@@ -161,16 +204,42 @@ function validateEDL(raw: unknown): EDL {
             aRollStart: Number((entry.overUnderlying as Record<string, unknown>).aRollStart),
             aRollEnd: Number((entry.overUnderlying as Record<string, unknown>).aRollEnd)
           }
+        } : {}),
+        ...(entry.timelapse ? {
+          timelapse: true,
+          timelapseSpeed: typeof entry.timelapseSpeed === 'number' ? entry.timelapseSpeed : 8
+        } : {}),
+        ...(entry.transition ? {
+          transition: true,
+          transitionTrim: (['start', 'middle', 'end'].includes(entry.transitionTrim as string)
+            ? entry.transitionTrim
+            : 'end') as 'start' | 'middle' | 'end'
         } : {})
       } satisfies EDLEntry
     }
   })
 
-  const aRollDuration = entries
-    .filter((e) => e.type === 'a-roll')
-    .reduce((sum, e) => sum + (e.sourceEnd - e.sourceStart), 0)
+  const totalDuration = entries.reduce((sum, e) => {
+    if (e.type === 'a-roll') return sum + (e.sourceEnd - e.sourceStart)
+    if (e.type === 'b-roll' && e.timelapse) {
+      // Timelapse output duration = source duration / speed, capped at MAX_BROLL_SECONDS
+      const speed = e.timelapseSpeed ?? 8
+      return sum + Math.min(MAX_BROLL_SECONDS, (e.sourceEnd - e.sourceStart) / speed)
+    }
+    return sum
+  }, 0)
 
-  return { entries, totalDuration: aRollDuration, rationale: obj.rationale }
+  const chapters: EDLChapter[] | undefined = Array.isArray(obj.chapters)
+    ? (obj.chapters as Array<Record<string, unknown>>)
+        .filter((c) => c.title && c.aRollClipId)
+        .map((c) => ({
+          title: String(c.title),
+          aRollClipId: String(c.aRollClipId),
+          aRollStart: Number(c.aRollStart ?? 0)
+        }))
+    : undefined
+
+  return { entries, totalDuration, rationale: obj.rationale, ...(chapters ? { chapters } : {}) }
 }
 
 /**
@@ -268,6 +337,57 @@ function fillTranscriptText(edl: EDL, transcript: Transcript): EDL {
   return { ...edl, entries }
 }
 
+const MAX_BROLL_SECONDS = 8
+const MAX_TRANSITION_SECONDS = 4
+
+/**
+ * Caps B-roll insert duration and adjusts trim position.
+ *
+ * - Regular B-roll: capped to min(8s, overUnderlying window, clip duration), trimmed from end
+ * - Transition clips: capped to 4s, trimmed from start/middle/end per transitionTrim
+ * - Timelapse clips: skipped here (handled separately in render pipeline)
+ */
+function capBRollDuration(edl: EDL, clips: ClipMeta[]): EDL {
+  const clipDurMap = new Map(clips.map((c) => [clipId(c.path), c.duration]))
+
+  const entries = edl.entries.map((entry) => {
+    if (entry.type !== 'b-roll') return entry
+    if (entry.timelapse) return entry  // timelapse handled in render pipeline
+
+    const clipDuration = clipDurMap.get(entry.clipId) ?? Infinity
+    const currentDuration = entry.sourceEnd - entry.sourceStart
+
+    // ── Transition clip ───────────────────────────────────────────────────────
+    if (entry.transition) {
+      const cap = Math.min(MAX_TRANSITION_SECONDS, clipDuration)
+      if (currentDuration <= cap) return entry
+
+      const trim = entry.transitionTrim ?? 'end'
+      if (trim === 'start') {
+        return { ...entry, sourceEnd: entry.sourceStart + cap }
+      } else if (trim === 'end') {
+        return { ...entry, sourceStart: entry.sourceEnd - cap }
+      } else {
+        // middle: center the cap window around the midpoint
+        const mid = (entry.sourceStart + entry.sourceEnd) / 2
+        return { ...entry, sourceStart: mid - cap / 2, sourceEnd: mid + cap / 2 }
+      }
+    }
+
+    // ── Regular B-roll overlay ─────────────────────────────────────────────────
+    const underlyingWindow = entry.overUnderlying
+      ? entry.overUnderlying.aRollEnd - entry.overUnderlying.aRollStart
+      : MAX_BROLL_SECONDS
+
+    const maxAllowed = Math.min(MAX_BROLL_SECONDS, underlyingWindow, clipDuration)
+    if (currentDuration <= maxAllowed) return entry
+
+    return { ...entry, sourceEnd: entry.sourceStart + maxAllowed }
+  })
+
+  return { ...edl, entries }
+}
+
 export function registerPlanEditHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(
     'plan-edit:plan',
@@ -287,15 +407,19 @@ export function registerPlanEditHandlers(ipcMain: IpcMain): void {
           ? `Total source footage: ${totalSourceMins} minutes. Target duration: use your judgment per the guidelines in the system prompt (8–12% of source, aiming for 8–18 minutes).`
           : `Total source footage: ${totalSourceMins} minutes. Target duration: aim for approximately ${settings.targetDurationMinutes} minutes.`
 
+        const silenceMap = await buildSilenceMap(aRollClips)
+        const silenceContext = buildSilenceContext(silenceMap)
+
         const userMessage = [
           durationNote,
           '',
           buildTranscriptContext(transcript, aRollClips),
-          buildBRollContext(bRollClips)
+          buildBRollContext(bRollClips),
+          ...(silenceContext ? [silenceContext] : [])
         ].join('\n')
 
         const modelLabel =
-          settings.llmProvider === 'anthropic' ? 'claude-sonnet-4-5'
+          settings.llmProvider === 'anthropic' ? (settings.anthropicModel || 'claude-sonnet-4-5')
           : settings.llmProvider === 'openai-compat' ? (settings.openaiCompatModel || 'local-model')
           : settings.ollamaModel
         console.log('[plan-edit] prompt chars:', userMessage.length + systemPrompt.length,
@@ -325,7 +449,7 @@ export function registerPlanEditHandlers(ipcMain: IpcMain): void {
           throw new Error('Model did not return a valid EDL. Response: ' + response.text.slice(0, 500))
         }
 
-        const edl = fillTranscriptText(snapToWordBoundaries(validateEDL(rawInput), transcript), transcript)
+        const edl = fillTranscriptText(capBRollDuration(snapToWordBoundaries(validateEDL(rawInput), transcript), bRollClips), transcript)
         return { ok: true, edl }
       } catch (err: unknown) {
         return { ok: false, error: (err as Error).message }
@@ -348,13 +472,17 @@ export function registerPlanEditHandlers(ipcMain: IpcMain): void {
       try {
         const systemPrompt = loadPrompt('revise-edit')
 
+        const silenceMap = await buildSilenceMap(aRollClips)
+        const silenceContext = buildSilenceContext(silenceMap)
+
         const userMessage = [
           `## Revision request\n${revisionRequest}`,
           '',
           `## Current EDL\n\`\`\`json\n${JSON.stringify(currentEDL, null, 2)}\n\`\`\``,
           '',
           buildTranscriptContext(transcript, aRollClips),
-          buildBRollContext(bRollClips)
+          buildBRollContext(bRollClips),
+          ...(silenceContext ? [silenceContext] : [])
         ].join('\n')
 
         const response = await llmCall(
@@ -379,7 +507,7 @@ export function registerPlanEditHandlers(ipcMain: IpcMain): void {
           throw new Error('Model did not return a valid EDL. Response: ' + response.text.slice(0, 500))
         }
 
-        const edl = fillTranscriptText(snapToWordBoundaries(validateEDL(rawInput), transcript), transcript)
+        const edl = fillTranscriptText(capBRollDuration(snapToWordBoundaries(validateEDL(rawInput), transcript), bRollClips), transcript)
         return { ok: true, edl }
       } catch (err: unknown) {
         return { ok: false, error: (err as Error).message }
