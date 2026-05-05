@@ -2,9 +2,11 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
 const api = {
-  // Folder scanning
+  // Folder / file picking
   pickFolder: (label: 'aroll' | 'broll') =>
     ipcRenderer.invoke('folder:pick', label),
+  pickFile: (filters?: Array<{ name: string; extensions: string[] }>) =>
+    ipcRenderer.invoke('file:pick', filters),
   scanFolder: (folderPath: string, roll: 'a' | 'b') =>
     ipcRenderer.invoke('folder:scan', folderPath, roll),
 

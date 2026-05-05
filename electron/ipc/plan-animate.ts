@@ -5,6 +5,33 @@ import { llmCall } from '../claude/client'
 import { proposeAnimationPlanTool } from '../claude/tools'
 import type { EDL, EDLEntry, Transcript, AnimationCue, AnimationPlan, AppSettings } from '@shared/types'
 
+/**
+ * Fallback: build combined-video transcript directly from each A-roll entry's
+ * transcriptText field. Used when the full word-level Transcript is not
+ * available (e.g. the user loaded a saved EDL and an existing video without
+ * going through the transcription step in the current session).
+ */
+function buildTranscriptFromEDL(edl: EDL): string {
+  const lines: string[] = ['## Combined video transcript (from EDL)\n']
+  let clock = 0
+
+  for (const entry of edl.entries) {
+    if (entry.type === 'a-roll') {
+      const text = (entry as Extract<EDLEntry, { type: 'a-roll' }>).transcriptText?.trim()
+      if (text) lines.push(`[${fmtTime(clock)}] ${text}`)
+      clock += entry.sourceEnd - entry.sourceStart
+    } else if (entry.type === 'b-roll') {
+      if (entry.timelapse) {
+        clock += Math.min(8, (entry.sourceEnd - entry.sourceStart) / (entry.timelapseSpeed ?? 8))
+      } else if (entry.transition) {
+        clock += Math.min(4, entry.sourceEnd - entry.sourceStart)
+      }
+    }
+  }
+
+  return lines.length > 1 ? lines.join('\n') : '## Combined video transcript\n(no text found in EDL)\n'
+}
+
 function loadPrompt(name: string): string {
   const candidates = [
     join(__dirname, '..', '..', 'electron', 'claude', 'prompts', `${name}.md`),
@@ -146,7 +173,7 @@ export function registerPlanAnimateHandlers(ipcMain: IpcMain): void {
     async (
       event,
       edl: EDL,
-      transcript: Transcript,
+      transcript: Transcript | null,
       combinedDuration: number,
       settings: AppSettings,
       apiKey: string
@@ -154,7 +181,12 @@ export function registerPlanAnimateHandlers(ipcMain: IpcMain): void {
       try {
         const systemPrompt = loadPrompt('plan-animate')
 
-        const combinedTranscript = buildCombinedTranscript(edl, transcript)
+        // Prefer word-level transcript (more accurate timestamps) but fall
+        // back gracefully to the EDL's transcriptText fields when the user
+        // is working from a saved EDL + existing video without re-transcribing.
+        const combinedTranscript = transcript
+          ? buildCombinedTranscript(edl, transcript)
+          : buildTranscriptFromEDL(edl)
         const durationMins = Math.floor(combinedDuration / 60)
         const durationSecs = Math.round(combinedDuration % 60)
 

@@ -112,6 +112,14 @@ export function registerFolderHandlers(ipcMain: IpcMain): void {
     return result.canceled ? null : result.filePaths[0]
   })
 
+  ipcMain.handle('file:pick', async (_event, filters: Array<{ name: string; extensions: string[] }>) => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: filters ?? [{ name: 'Video', extensions: ['mp4', 'mov', 'm4v'] }]
+    })
+    return result.canceled ? null : result.filePaths[0]
+  })
+
   ipcMain.handle(
     'folder:scan',
     async (_event, folderPath: string, roll: 'a' | 'b') => {

@@ -122,7 +122,9 @@ export function AnimateTab() {
     animationPlan,
     finalVideoPath,
     setAnimationPlan,
-    setFinalVideo
+    setFinalVideo,
+    setCombinedVideo,
+    setActiveTab,
   } = useStore()
 
   const [planning, setPlanning] = useState(false)
@@ -141,7 +143,7 @@ export function AnimateTab() {
     }
   }, [animationPlan])
 
-  // Listen for animation progress events
+  // Listen for animation render progress events
   useEffect(() => {
     const unsub = window.api.on('animate:progress', (raw) => {
       const p = raw as { stage: string; percent: number }
@@ -159,21 +161,25 @@ export function AnimateTab() {
     })
   }
 
+  async function handlePickVideo() {
+    const path = await window.api.pickFile([{ name: 'Video', extensions: ['mp4', 'mov', 'm4v'] }])
+    if (path) setCombinedVideo(path)
+  }
+
   async function handlePlanAnimations() {
-    if (!edl || !transcript || !combinedVideoPath || !settings) return
+    if (!edl || !combinedVideoPath || !settings) return
     setPlanning(true)
     setError(null)
 
     try {
       const apiKey = await window.api.getApiKey()
-      // Use EDL totalDuration as approximation for combined video duration
       const combinedDuration = edl.totalDuration
 
+      // transcript is optional — plan-animate falls back to EDL transcriptText
       const result = await window.api.planAnimate(edl, transcript, combinedDuration, settings, apiKey)
 
       if (!result.ok || !result.plan) {
         setError(result.error ?? 'Animation planning failed')
-        setPlanning(false)
         return
       }
 
@@ -205,7 +211,6 @@ export function AnimateTab() {
 
       if (!result.ok || !result.finalPath) {
         setError(result.error ?? 'Render failed')
-        setRendering(false)
         setRenderProgress(null)
         return
       }
@@ -225,28 +230,50 @@ export function AnimateTab() {
     setFinalPath(combinedVideoPath)
   }
 
-  function openInFinder(path: string) {
-    // Use shell.openPath equivalent — show in finder
-    window.api.on('noop', () => {})  // ensure api is present
-    // Direct shell reveal via Electron's shell module isn't in preload,
-    // so we open the folder by opening the file path directly
-    const link = document.createElement('a')
-    link.href = `file://${path}`
-    link.click()
-  }
-
   // ── Guard: no combined video yet ─────────────────────────────────────────────
 
   if (!combinedVideoPath) {
+    const aRollCount = edl?.entries.filter((e) => e.type === 'a-roll').length ?? 0
+
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 text-center p-8">
+      <div className="flex flex-col items-center justify-center h-full gap-6 text-center p-8">
         <LockIcon />
-        <div>
-          <p className="text-zinc-300 font-medium">No combined video yet</p>
-          <p className="text-zinc-500 text-sm mt-1">
-            Complete the edit in the Edit tab first. Once you render{' '}
-            <code className="text-zinc-400">combined.mp4</code>, it will appear here.
+        <div className="flex flex-col gap-1">
+          <p className="text-zinc-300 font-medium">No combined video loaded</p>
+          <p className="text-zinc-500 text-sm">
+            Render one in the Edit tab, or pick an existing{' '}
+            <code className="text-zinc-400">combined.mp4</code>.
           </p>
+        </div>
+
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          <button
+            onClick={handlePickVideo}
+            className="px-4 py-2 rounded bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
+          >
+            Pick existing video…
+          </button>
+
+          {/* EDL status hint */}
+          {!edl ? (
+            <div className="flex items-start gap-2 p-3 rounded bg-zinc-900 border border-zinc-800 text-left">
+              <span className="text-amber-400 text-xs mt-0.5">⚠</span>
+              <p className="text-xs text-zinc-400">
+                No EDL loaded. Go to the{' '}
+                <button
+                  onClick={() => setActiveTab('edit')}
+                  className="text-violet-400 hover:text-violet-300 underline"
+                >
+                  Edit tab
+                </button>
+                {' '}and load your saved EDL first.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-green-500">
+              ✓ EDL loaded — {aRollCount} A-roll segments ready
+            </p>
+          )}
         </div>
       </div>
     )
@@ -254,6 +281,7 @@ export function AnimateTab() {
 
   const approvedCount = plan ? plan.cues.filter((c) => approvedIds.has(c.id)).length : 0
   const isDone = finalPath !== null
+  const canPlan = !!edl && !rendering
 
   return (
     <div className="flex flex-col gap-6 p-8 h-full overflow-y-auto">
@@ -266,39 +294,59 @@ export function AnimateTab() {
 
       {/* ── Combined video preview ────────────────────────────────────────── */}
       <section className="flex flex-col gap-3 p-5 rounded-lg bg-zinc-900 border border-zinc-800">
-        <h2 className="text-xs font-mono uppercase tracking-widest text-zinc-500">Combined video</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-mono uppercase tracking-widest text-zinc-500">Combined video</h2>
+          <button
+            onClick={handlePickVideo}
+            className="text-xs text-zinc-500 hover:text-zinc-300 underline transition-colors"
+          >
+            Change…
+          </button>
+        </div>
         <video
           src={`file://${combinedVideoPath}`}
           controls
           className="w-full rounded border border-zinc-800 max-h-96"
         />
+        {!transcript && (
+          <p className="text-xs text-zinc-500">
+            No word-level transcript in session — animation timestamps will be derived from EDL segment text.
+          </p>
+        )}
       </section>
 
-      {/* ── Plan animations button ────────────────────────────────────────── */}
+      {/* ── Plan animations ───────────────────────────────────────────────── */}
       {!isDone && (
         <section className="flex flex-col gap-4 p-5 rounded-lg bg-zinc-900 border border-zinc-800">
           <h2 className="text-xs font-mono uppercase tracking-widest text-zinc-500">Animation plan</h2>
 
           {error && <ErrorBox message={error} />}
 
-          {planning && (
+          {!edl && (
+            <p className="text-xs text-amber-400">
+              ⚠ Load an EDL in the{' '}
+              <button onClick={() => setActiveTab('edit')} className="underline hover:text-amber-300">
+                Edit tab
+              </button>
+              {' '}before planning animations.
+            </p>
+          )}
+
+          {planning ? (
             <div className="flex items-center gap-2">
               <Spinner />
               <span className="text-xs text-zinc-400">Planning animations with Claude…</span>
             </div>
-          )}
-
-          {!planning && (
+          ) : (
             <button
               onClick={handlePlanAnimations}
-              disabled={!edl || !transcript || rendering}
+              disabled={!canPlan}
               className="self-start px-4 py-2 rounded bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors disabled:opacity-40"
             >
               {plan ? 'Re-plan animations' : 'Plan animations with AI'}
             </button>
           )}
 
-          {/* Plan rationale */}
           {plan && !planning && (
             <p className="text-xs text-zinc-400 leading-relaxed border-l-2 border-zinc-700 pl-3">
               {plan.rationale}
@@ -311,12 +359,8 @@ export function AnimateTab() {
       {plan && !isDone && (
         <section className="flex flex-col gap-3 p-5 rounded-lg bg-zinc-900 border border-zinc-800">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-mono uppercase tracking-widest text-zinc-500">
-              Animation cues
-            </h2>
-            <span className="text-xs text-zinc-500">
-              {approvedCount}/{plan.cues.length} approved
-            </span>
+            <h2 className="text-xs font-mono uppercase tracking-widest text-zinc-500">Animation cues</h2>
+            <span className="text-xs text-zinc-500">{approvedCount}/{plan.cues.length} approved</span>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -336,10 +380,7 @@ export function AnimateTab() {
       {rendering && renderProgress && (
         <section className="flex flex-col gap-3 p-5 rounded-lg bg-zinc-900 border border-zinc-800">
           <h2 className="text-xs font-mono uppercase tracking-widest text-zinc-500">Rendering</h2>
-          <RenderProgress
-            label={renderProgress.stage}
-            progress={renderProgress.percent / 100}
-          />
+          <RenderProgress label={renderProgress.stage} progress={renderProgress.percent / 100} />
         </section>
       )}
 
@@ -347,11 +388,9 @@ export function AnimateTab() {
       {isDone && finalPath && (
         <section className="flex flex-col gap-3 p-5 rounded-lg bg-zinc-900 border border-zinc-800">
           <h2 className="text-xs font-mono uppercase tracking-widest text-zinc-500">Final video</h2>
-          <p className="text-xs text-green-400">Render complete</p>
-          <p className="text-xs text-zinc-500 font-mono truncate" title={finalPath}>
-            {finalPath}
-          </p>
-          <div className="flex gap-2">
+          <p className="text-xs text-green-400">✓ Render complete</p>
+          <p className="text-xs text-zinc-500 font-mono truncate" title={finalPath}>{finalPath}</p>
+          <div className="flex gap-2 flex-wrap">
             <a
               href={`file://${finalPath}`}
               className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-300 transition-colors"
@@ -359,16 +398,7 @@ export function AnimateTab() {
               Open file
             </a>
             <button
-              onClick={() => openInFinder(finalPath)}
-              className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-300 transition-colors"
-            >
-              Show in Finder
-            </button>
-            <button
-              onClick={() => {
-                setFinalPath(null)
-                setRenderProgress(null)
-              }}
+              onClick={() => { setFinalPath(null); setRenderProgress(null) }}
               className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-500 transition-colors"
             >
               Make changes
@@ -395,7 +425,7 @@ export function AnimateTab() {
             Skip animations
           </button>
           {error && !rendering && (
-            <span className="text-xs text-red-400 truncate">{error.slice(0, 80)}</span>
+            <span className="text-xs text-red-400 truncate max-w-xs">{error.slice(0, 100)}</span>
           )}
         </div>
       )}

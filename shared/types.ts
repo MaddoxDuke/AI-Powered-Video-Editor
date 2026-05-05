@@ -146,6 +146,7 @@ export type LLMStatus =
 // ──────────────────────────────────────────────
 export interface ElectronAPI {
   pickFolder: (label: 'aroll' | 'broll') => Promise<string | null>
+  pickFile: (filters?: Array<{ name: string; extensions: string[] }>) => Promise<string | null>
   scanFolder: (folderPath: string, roll: 'a' | 'b') => Promise<ClipMeta[]>
   getApiKey: () => Promise<string>
   setApiKey: (key: string) => Promise<void>
@@ -166,7 +167,7 @@ export interface ElectronAPI {
     clips: Array<{ path: string }>,
     model: string
   ) => Promise<{ ok: boolean; transcript: Transcript; errors: Array<{ path: string; error: string }> }>
-  planAnimate: (edl: EDL, transcript: Transcript, combinedDuration: number, settings: AppSettings, apiKey: string) => Promise<{ ok: boolean; plan?: AnimationPlan; error?: string }>
+  planAnimate: (edl: EDL, transcript: Transcript | null, combinedDuration: number, settings: AppSettings, apiKey: string) => Promise<{ ok: boolean; plan?: AnimationPlan; error?: string }>
   renderAnimations: (plan: AnimationPlan, combinedVideoPath: string, exportFolder: string) => Promise<{ ok: boolean; finalPath?: string; error?: string }>
   on: (channel: string, fn: (...args: unknown[]) => void) => () => void
 }
