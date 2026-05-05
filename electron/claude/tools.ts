@@ -1,5 +1,37 @@
 import type { LLMTool } from './client'
 
+export const proposeAnimationPlanTool: LLMTool = {
+  name: 'propose_animation_plan',
+  description: 'Output an animation plan with timestamped cues for the combined video.',
+  schema: {
+    type: 'object',
+    required: ['cues', 'rationale'],
+    properties: {
+      rationale: { type: 'string' },
+      cues: {
+        type: 'array',
+        items: {
+          type: 'object',
+          required: ['id', 'startInFinal', 'duration', 'kind', 'triggerText', 'variables', 'reason'],
+          properties: {
+            id: { type: 'string' },
+            startInFinal: { type: 'number', description: 'Seconds into the final combined video.' },
+            duration: { type: 'number', description: 'How long the animation plays (2–6 seconds).' },
+            kind: { type: 'string', enum: ['lower-third', 'callout', 'kinetic-text', 'data-card'] },
+            triggerText: { type: 'string', description: 'The spoken words that triggered this cue.' },
+            variables: {
+              type: 'object',
+              description: 'Kind-specific template variables. lower-third: {title,subtitle?}. callout: {text,subtext?}. kinetic-text: {text}. data-card: {label,value,unit?}.',
+              additionalProperties: { type: 'string' }
+            },
+            reason: { type: 'string' }
+          }
+        }
+      }
+    }
+  }
+}
+
 export const proposeEDLTool: LLMTool = {
   name: 'propose_edl',
   description: 'Output a complete Edit Decision List for the video.',

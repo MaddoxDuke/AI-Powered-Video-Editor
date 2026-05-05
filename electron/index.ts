@@ -9,6 +9,8 @@ import { registerPlanEditHandlers } from './ipc/plan-edit'
 import { registerRenderCutHandlers } from './ipc/render-cut'
 import { registerBRollDescribeHandlers } from './ipc/broll-describe'
 import { registerEDLFileHandlers } from './ipc/edl-file'
+import { registerPlanAnimateHandlers } from './ipc/plan-animate'
+import { registerRenderAnimationsHandlers } from './ipc/render-animations'
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -57,6 +59,8 @@ app.whenReady().then(() => {
   registerRenderCutHandlers(ipcMain)
   registerBRollDescribeHandlers(ipcMain)
   registerEDLFileHandlers(ipcMain)
+  registerPlanAnimateHandlers(ipcMain)
+  registerRenderAnimationsHandlers(ipcMain)
 
   createWindow()
 

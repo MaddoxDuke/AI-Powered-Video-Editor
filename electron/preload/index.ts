@@ -46,6 +46,12 @@ const api = {
   edlLoad: () => ipcRenderer.invoke('edl-file:load'),
   edlLoadLast: () => ipcRenderer.invoke('edl-file:load-last'),
 
+  // Animation planning + render
+  planAnimate: (edl: unknown, transcript: unknown, combinedDuration: number, settings: unknown, apiKey: string) =>
+    ipcRenderer.invoke('animate:plan', edl, transcript, combinedDuration, settings, apiKey),
+  renderAnimations: (plan: unknown, combinedVideoPath: string, exportFolder: string) =>
+    ipcRenderer.invoke('animate:render', plan, combinedVideoPath, exportFolder),
+
   // Push events from main → renderer
   on: (channel: string, fn: (...args: unknown[]) => void) => {
     const wrapped = (_event: Electron.IpcRendererEvent, ...args: unknown[]) => fn(...args)

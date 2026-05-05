@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lower Third</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 1920px;
+      height: 1080px;
+      background: transparent;
+      overflow: hidden;
+      font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    }
+    #lower-third {
+      position: absolute;
+      bottom: 80px;
+      left: 80px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      background: rgba(0, 0, 0, 0.85);
+      border-left: 4px solid #f97316;
+      padding: 14px 22px 14px 18px;
+      min-width: 320px;
+      max-width: 700px;
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    #title {
+      font-size: 36px;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.1;
+      letter-spacing: -0.3px;
+    }
+    #subtitle {
+      font-size: 22px;
+      font-weight: 500;
+      color: #d4d4d8;
+      line-height: 1.2;
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div id="lower-third">
+    <div id="title"></div>
+    <div id="subtitle"></div>
+  </div>
+
+  <script>
+    (function () {
+      const vars = window.__hyperframes?.getVariables?.() ?? {};
+      const title = vars.title || 'Title';
+      const subtitle = vars.subtitle || '';
+      const duration = parseFloat(vars.duration) || 4;
+
+      document.getElementById('title').textContent = title;
+      const subEl = document.getElementById('subtitle');
+      if (subtitle) {
+        subEl.textContent = subtitle;
+      } else {
+        subEl.style.display = 'none';
+      }
+
+      const el = document.getElementById('lower-third');
+      const tl = gsap.timeline();
+
+      // Slide up + fade in
+      tl.to(el, {
+        opacity: 1,
+        y: 0,
+        duration: 0.5,
+        ease: 'power2.out'
+      });
+
+      // Hold until duration - 0.4s
+      const holdDuration = Math.max(0, duration - 0.5 - 0.4);
+      tl.to({}, { duration: holdDuration });
+
+      // Fade + slide up out
+      tl.to(el, {
+        opacity: 0,
+        y: -20,
+        duration: 0.4,
+        ease: 'power2.in'
+      });
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines['main'] = tl;
+    })();
+  </script>
+</body>
+</html>

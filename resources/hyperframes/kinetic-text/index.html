@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kinetic Text</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 1920px;
+      height: 1080px;
+      background: transparent;
+      overflow: hidden;
+      font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #kinetic-container {
+      text-align: center;
+      max-width: 1400px;
+      padding: 0 80px;
+    }
+    #kinetic-text {
+      font-size: 72px;
+      font-weight: 700;
+      color: #ffffff;
+      text-shadow: 0 4px 20px rgba(0, 0, 0, 0.8);
+      line-height: 1.1;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 0 18px;
+    }
+    .word {
+      display: inline-block;
+      opacity: 0;
+      transform: translateY(20px);
+    }
+  </style>
+</head>
+<body>
+  <div id="kinetic-container">
+    <div id="kinetic-text"></div>
+  </div>
+
+  <script>
+    (function () {
+      const vars = window.__hyperframes?.getVariables?.() ?? {};
+      const text = vars.text || 'Section Title';
+      const duration = parseFloat(vars.duration) || 3;
+
+      const container = document.getElementById('kinetic-text');
+      const words = text.split(/\s+/).filter(Boolean);
+
+      words.forEach((word) => {
+        const span = document.createElement('span');
+        span.className = 'word';
+        span.textContent = word;
+        container.appendChild(span);
+      });
+
+      const wordEls = container.querySelectorAll('.word');
+      const staggerTime = 0.08;
+      const inDuration = 0.35;
+      const totalInTime = inDuration + staggerTime * (words.length - 1);
+      const outDuration = 0.3;
+      const holdDuration = Math.max(0, duration - totalInTime - outDuration);
+
+      const tl = gsap.timeline();
+
+      // Words stagger in
+      tl.to(wordEls, {
+        opacity: 1,
+        y: 0,
+        duration: inDuration,
+        stagger: staggerTime,
+        ease: 'power2.out'
+      });
+
+      // Hold
+      tl.to({}, { duration: holdDuration });
+
+      // All fade out together
+      tl.to(wordEls, {
+        opacity: 0,
+        duration: outDuration,
+        ease: 'power2.in'
+      });
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines['main'] = tl;
+    })();
+  </script>
+</body>
+</html>

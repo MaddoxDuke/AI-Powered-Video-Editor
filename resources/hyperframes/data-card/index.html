@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Data Card</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 1920px;
+      height: 1080px;
+      background: transparent;
+      overflow: hidden;
+      font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif;
+    }
+    #data-card {
+      position: absolute;
+      top: 80px;
+      right: 80px;
+      background: rgba(0, 0, 0, 0.85);
+      border-radius: 10px;
+      overflow: hidden;
+      min-width: 260px;
+      max-width: 420px;
+      opacity: 0;
+      transform: translateX(40px);
+    }
+    #orange-bar {
+      height: 6px;
+      background: #f97316;
+      width: 100%;
+    }
+    #card-body {
+      padding: 18px 24px 20px;
+    }
+    #label {
+      font-size: 18px;
+      color: #a1a1aa;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+    #value-row {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+    }
+    #value {
+      font-size: 56px;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1;
+      letter-spacing: -1px;
+    }
+    #unit {
+      font-size: 24px;
+      color: #d4d4d8;
+      font-weight: 400;
+    }
+  </style>
+</head>
+<body>
+  <div id="data-card">
+    <div id="orange-bar"></div>
+    <div id="card-body">
+      <div id="label"></div>
+      <div id="value-row">
+        <span id="value"></span>
+        <span id="unit"></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const vars = window.__hyperframes?.getVariables?.() ?? {};
+      const label = vars.label || 'Measurement';
+      const value = vars.value || '0';
+      const unit = vars.unit || '';
+      const duration = parseFloat(vars.duration) || 4;
+
+      document.getElementById('label').textContent = label;
+      document.getElementById('value').textContent = value;
+      const unitEl = document.getElementById('unit');
+      if (unit) {
+        unitEl.textContent = unit;
+      } else {
+        unitEl.style.display = 'none';
+      }
+
+      const el = document.getElementById('data-card');
+      const tl = gsap.timeline();
+
+      // Slide in from right + fade in
+      tl.to(el, {
+        opacity: 1,
+        x: 0,
+        duration: 0.5,
+        ease: 'power2.out'
+      });
+
+      // Hold
+      const holdDuration = Math.max(0, duration - 0.5 - 0.4);
+      tl.to({}, { duration: holdDuration });
+
+      // Slide out to right + fade out
+      tl.to(el, {
+        opacity: 0,
+        x: 40,
+        duration: 0.4,
+        ease: 'power2.in'
+      });
+
+      window.__timelines = window.__timelines || {};
+      window.__timelines['main'] = tl;
+    })();
+  </script>
+</body>
+</html>

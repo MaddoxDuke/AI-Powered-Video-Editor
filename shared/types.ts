@@ -80,7 +80,6 @@ export type AnimationKind =
   | 'callout'
   | 'kinetic-text'
   | 'data-card'
-  | 'transition'
 
 export type AnimationCue = {
   id: string
@@ -88,7 +87,7 @@ export type AnimationCue = {
   duration: number
   kind: AnimationKind
   triggerText: string
-  hyperframesProjectPath: string
+  variables: Record<string, string>
   reason: string
 }
 
@@ -167,5 +166,7 @@ export interface ElectronAPI {
     clips: Array<{ path: string }>,
     model: string
   ) => Promise<{ ok: boolean; transcript: Transcript; errors: Array<{ path: string; error: string }> }>
+  planAnimate: (edl: EDL, transcript: Transcript, combinedDuration: number, settings: AppSettings, apiKey: string) => Promise<{ ok: boolean; plan?: AnimationPlan; error?: string }>
+  renderAnimations: (plan: AnimationPlan, combinedVideoPath: string, exportFolder: string) => Promise<{ ok: boolean; finalPath?: string; error?: string }>
   on: (channel: string, fn: (...args: unknown[]) => void) => () => void
 }
