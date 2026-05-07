@@ -129,6 +129,7 @@ export function AnimateTab() {
     setFinalVideo,
     setCombinedVideo,
     setActiveTab,
+    setEDL,
   } = useStore()
 
   const [planning, setPlanning] = useState(false)
@@ -198,6 +199,11 @@ export function AnimateTab() {
   async function handlePickVideo() {
     const path = await window.api.pickFile([{ name: 'Video', extensions: ['mp4', 'mov', 'm4v'] }])
     if (path) setCombinedVideo(path)
+  }
+
+  async function handleLoadEDL() {
+    const result = await window.api.edlLoad()
+    if (!result.canceled && result.ok && result.edl) setEDL(result.edl)
   }
 
   async function handlePickStyleImage() {
@@ -342,21 +348,14 @@ export function AnimateTab() {
             Pick existing video…
           </button>
 
-          {/* EDL status hint */}
+          {/* EDL status */}
           {!edl ? (
-            <div className="flex items-start gap-2 p-3 rounded bg-zinc-900 border border-zinc-800 text-left">
-              <span className="text-amber-400 text-xs mt-0.5">⚠</span>
-              <p className="text-xs text-zinc-400">
-                No EDL loaded. Go to the{' '}
-                <button
-                  onClick={() => setActiveTab('edit')}
-                  className="text-violet-400 hover:text-violet-300 underline"
-                >
-                  Edit tab
-                </button>
-                {' '}and load your saved EDL first.
-              </p>
-            </div>
+            <button
+              onClick={handleLoadEDL}
+              className="px-4 py-2 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-white text-sm font-medium transition-colors"
+            >
+              Load EDL…
+            </button>
           ) : (
             <p className="text-xs text-green-500">
               ✓ EDL loaded — {aRollCount} A-roll segments ready
@@ -412,13 +411,15 @@ export function AnimateTab() {
           {error && <ErrorBox message={error} />}
 
           {!edl && (
-            <p className="text-xs text-amber-400">
-              ⚠ Load an EDL in the{' '}
-              <button onClick={() => setActiveTab('edit')} className="underline hover:text-amber-300">
-                Edit tab
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-amber-400">⚠ No EDL loaded</span>
+              <button
+                onClick={handleLoadEDL}
+                className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-300 font-medium transition-colors"
+              >
+                Load EDL…
               </button>
-              {' '}before planning animations.
-            </p>
+            </div>
           )}
 
           {/* Style prompt — only shown before first plan */}
