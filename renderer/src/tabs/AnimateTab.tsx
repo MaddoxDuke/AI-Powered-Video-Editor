@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 import { RenderProgress } from '../components/RenderProgress'
 import { CopyButton } from '../components/CopyButton'
+import { ModelSelector } from '../components/ModelSelector'
+import { CueTimeline } from '../components/CueTimeline'
 import type { AnimationPlan, AnimationCue } from '@shared/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -113,6 +115,8 @@ function CueCard({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+type RevisionEntry = { request: string; rationale: string }
+
 export function AnimateTab() {
   const {
     combinedVideoPath,
@@ -135,6 +139,24 @@ export function AnimateTab() {
   const [finalPath, setFinalPath] = useState<string | null>(finalVideoPath)
   const [error, setError] = useState<string | null>(null)
 
+  // Style prompt state
+  const [styleText, setStyleText] = useState('')
+  const [styleImagePath, setStyleImagePath] = useState<string | null>(null)
+
+  // Model selector state
+  const [selectedModel, setSelectedModel] = useState<string>(
+    settings?.anthropicModel ?? 'claude-sonnet-4-5'
+  )
+
+  // Active cue for timeline
+  const [activeCueId, setActiveCueId] = useState<string | null>(null)
+
+  // Revise state
+  const [revising, setRevising] = useState(false)
+  const [reviseRequest, setReviseRequest] = useState('')
+  const [revisionHistory, setRevisionHistory] = useState<RevisionEntry[]>([])
+  const [reviseError, setReviseError] = useState<string | null>(null)
+
   // Sync plan from store on mount (in case we navigated away and back)
   useEffect(() => {
     if (animationPlan && !plan) {
@@ -142,6 +164,13 @@ export function AnimateTab() {
       setApprovedIds(new Set(animationPlan.cues.map((c) => c.id)))
     }
   }, [animationPlan])
+
+  // Update selectedModel when settings loads
+  useEffect(() => {
+    if (settings?.anthropicModel) {
+      setSelectedModel(settings.anthropicModel)
+    }
+  }, [settings])
 
   // Listen for animation render progress events
   useEffect(() => {
@@ -161,9 +190,19 @@ export function AnimateTab() {
     })
   }
 
+  function handleCueTimelineClick(id: string) {
+    setActiveCueId(id)
+    document.getElementById('cue-' + id)?.scrollIntoView({ behavior: 'smooth' })
+  }
+
   async function handlePickVideo() {
     const path = await window.api.pickFile([{ name: 'Video', extensions: ['mp4', 'mov', 'm4v'] }])
     if (path) setCombinedVideo(path)
+  }
+
+  async function handlePickStyleImage() {
+    const path = await window.api.pickFile([{ name: 'Image', extensions: ['jpg', 'jpeg', 'png', 'webp'] }])
+    if (path) setStyleImagePath(path)
   }
 
   async function handlePlanAnimations() {
@@ -171,12 +210,22 @@ export function AnimateTab() {
     setPlanning(true)
     setError(null)
 
+    const effectiveSettings = { ...settings, anthropicModel: selectedModel }
+
     try {
       const apiKey = await window.api.getApiKey()
       const combinedDuration = edl.totalDuration
 
       // transcript is optional — plan-animate falls back to EDL transcriptText
-      const result = await window.api.planAnimate(edl, transcript, combinedDuration, settings, apiKey)
+      const result = await window.api.planAnimate(
+        edl,
+        transcript,
+        combinedDuration,
+        effectiveSettings,
+        apiKey,
+        styleText.trim() || null,
+        styleImagePath
+      )
 
       if (!result.ok || !result.plan) {
         setError(result.error ?? 'Animation planning failed')
@@ -187,10 +236,49 @@ export function AnimateTab() {
       setAnimationPlan(result.plan)
       setApprovedIds(new Set(result.plan.cues.map((c) => c.id)))
       setFinalPath(null)
+      setActiveCueId(null)
+      // Clear style prompt after successful plan
+      setStyleText('')
+      setStyleImagePath(null)
     } catch (err: unknown) {
       setError((err as Error).message)
     } finally {
       setPlanning(false)
+    }
+  }
+
+  async function handleReviseAnimations() {
+    if (!plan || !edl || !settings || !reviseRequest.trim()) return
+    setRevising(true)
+    setReviseError(null)
+
+    const effectiveSettings = { ...settings, anthropicModel: selectedModel }
+
+    try {
+      const apiKey = await window.api.getApiKey()
+      const result = await window.api.reviseAnimate(
+        plan,
+        reviseRequest.trim(),
+        edl.totalDuration,
+        effectiveSettings,
+        apiKey
+      )
+
+      if (!result.ok || !result.plan) {
+        setReviseError(result.error ?? 'Revision failed')
+        return
+      }
+
+      setRevisionHistory((h) => [...h, { request: reviseRequest.trim(), rationale: result.plan!.rationale }])
+      setPlan(result.plan)
+      setAnimationPlan(result.plan)
+      setApprovedIds(new Set(result.plan.cues.map((c) => c.id)))
+      setReviseRequest('')
+      setActiveCueId(null)
+    } catch (err: unknown) {
+      setReviseError((err as Error).message)
+    } finally {
+      setRevising(false)
     }
   }
 
@@ -281,7 +369,8 @@ export function AnimateTab() {
 
   const approvedCount = plan ? plan.cues.filter((c) => approvedIds.has(c.id)).length : 0
   const isDone = finalPath !== null
-  const canPlan = !!edl && !rendering
+  const canPlan = !!edl && !rendering && !revising
+  const isBusy = planning || rendering || revising
 
   return (
     <div className="flex flex-col gap-6 p-8 h-full overflow-y-auto">
@@ -332,19 +421,70 @@ export function AnimateTab() {
             </p>
           )}
 
+          {/* Style prompt — only shown before first plan */}
+          {!plan && (
+            <details className="text-xs">
+              <summary className="text-zinc-500 cursor-pointer hover:text-zinc-300 transition-colors select-none">
+                Animation style (optional)
+              </summary>
+              <div className="mt-3 flex flex-col gap-3">
+                <textarea
+                  value={styleText}
+                  onChange={(e) => setStyleText(e.target.value)}
+                  placeholder={'Describe your style... e.g. "minimal and clean, white on black, no orange" or "bold aggressive automotive, high contrast"'}
+                  rows={3}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-violet-500 resize-none"
+                />
+
+                {settings?.llmProvider === 'anthropic' && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={handlePickStyleImage}
+                      className="px-3 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+                    >
+                      Add reference image…
+                    </button>
+                    {styleImagePath && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-zinc-400 font-mono truncate max-w-xs">
+                          {styleImagePath.split('/').pop()}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setStyleImagePath(null)}
+                          className="text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+                        >
+                          ✕ remove
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <p className="text-zinc-600">
+                  Text and image reference are passed to Claude when generating the plan.
+                </p>
+              </div>
+            </details>
+          )}
+
           {planning ? (
             <div className="flex items-center gap-2">
               <Spinner />
               <span className="text-xs text-zinc-400">Planning animations with Claude…</span>
             </div>
           ) : (
-            <button
-              onClick={handlePlanAnimations}
-              disabled={!canPlan}
-              className="self-start px-4 py-2 rounded bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors disabled:opacity-40"
-            >
-              {plan ? 'Re-plan animations' : 'Plan animations with AI'}
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={handlePlanAnimations}
+                disabled={!canPlan}
+                className="px-4 py-2 rounded bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors disabled:opacity-40"
+              >
+                {plan ? 'Re-plan animations' : 'Plan animations with AI'}
+              </button>
+              <ModelSelector settings={settings} value={selectedModel} onChange={setSelectedModel} />
+            </div>
           )}
 
           {plan && !planning && (
@@ -353,6 +493,19 @@ export function AnimateTab() {
             </p>
           )}
         </section>
+      )}
+
+      {/* ── Cue timeline strip ────────────────────────────────────────────── */}
+      {plan && !isDone && (
+        <div className="px-0">
+          <CueTimeline
+            cues={plan.cues}
+            totalDuration={edl?.totalDuration ?? 0}
+            approvedIds={approvedIds}
+            activeCueId={activeCueId}
+            onCueClick={handleCueTimelineClick}
+          />
+        </div>
       )}
 
       {/* ── Cue list ─────────────────────────────────────────────────────── */}
@@ -365,14 +518,69 @@ export function AnimateTab() {
 
           <div className="flex flex-col gap-2">
             {plan.cues.map((cue) => (
-              <CueCard
-                key={cue.id}
-                cue={cue}
-                approved={approvedIds.has(cue.id)}
-                onToggle={toggleApproval}
-              />
+              <div key={cue.id} id={'cue-' + cue.id}>
+                <CueCard
+                  cue={cue}
+                  approved={approvedIds.has(cue.id)}
+                  onToggle={toggleApproval}
+                />
+              </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* ── Revise panel ─────────────────────────────────────────────────── */}
+      {plan && !isDone && (
+        <section className="flex flex-col gap-3 p-5 rounded-lg bg-zinc-900 border border-zinc-800">
+          <h2 className="text-xs font-mono uppercase tracking-widest text-zinc-500">Refine plan</h2>
+
+          {reviseError && <ErrorBox message={reviseError} />}
+
+          {/* Revision history */}
+          {revisionHistory.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {revisionHistory.map((entry, i) => (
+                <div key={i} className="flex flex-col gap-1">
+                  <div className="self-end max-w-xs bg-violet-600/20 border border-violet-600/30 rounded-lg px-3 py-2">
+                    <p className="text-xs text-violet-300">{entry.request}</p>
+                  </div>
+                  <div className="self-start max-w-sm bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2">
+                    <p className="text-xs text-zinc-400 leading-relaxed">{entry.rationale}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {revising ? (
+            <div className="flex items-center gap-2">
+              <Spinner />
+              <span className="text-xs text-zinc-400">Revising animation plan…</span>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <textarea
+                value={reviseRequest}
+                onChange={(e) => setReviseRequest(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleReviseAnimations() }}
+                placeholder={'e.g. "Change the accent color to blue"\n"Remove the kinetic text cue"\n"Add a data card when the torque spec is mentioned"'}
+                rows={3}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-violet-500 resize-none"
+              />
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={handleReviseAnimations}
+                  disabled={isBusy || !reviseRequest.trim()}
+                  className="px-4 py-2 rounded bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors disabled:opacity-40"
+                >
+                  Revise
+                </button>
+                <ModelSelector settings={settings} value={selectedModel} onChange={setSelectedModel} />
+                <span className="text-xs text-zinc-600">⌘↵ to submit</span>
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -412,14 +620,14 @@ export function AnimateTab() {
         <div className="mt-auto pt-4 border-t border-zinc-800 flex items-center gap-3 flex-wrap">
           <button
             onClick={handleRenderAnimations}
-            disabled={!plan || approvedCount === 0 || rendering || planning}
+            disabled={!plan || approvedCount === 0 || rendering || planning || revising}
             className="px-5 py-2 rounded bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors disabled:opacity-40"
           >
             {rendering ? 'Rendering…' : `Render with animations (${approvedCount})`}
           </button>
           <button
             onClick={handleSkipAnimations}
-            disabled={rendering || planning}
+            disabled={isBusy}
             className="px-4 py-2 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-sm text-zinc-300 font-medium transition-colors disabled:opacity-40"
           >
             Skip animations

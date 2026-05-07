@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from '@shared/types'
 import type { ClipMeta, EDL, EDLEntry } from '@shared/types'
 import { CopyButton } from '../components/CopyButton'
 import { TimelineView } from '../components/TimelineView'
+import { ModelSelector } from '../components/ModelSelector'
 
 // ── Local state types ─────────────────────────────────────────────────────────
 
@@ -118,8 +119,17 @@ export function EditTab() {
   const [revisionHistory, setRevisionHistory] = useState<RevisionEntry[]>([])
   const [lastDiff, setLastDiff] = useState<EDLDiff | null>(null)
   const [savedFilePath, setSavedFilePath] = useState<string | null>(null)
+  const [selectedModel, setSelectedModel] = useState<string>(
+    settings?.anthropicModel ?? 'claude-sonnet-4-5'
+  )
 
   const unsubRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    if (settings?.anthropicModel) {
+      setSelectedModel(settings.anthropicModel)
+    }
+  }, [settings])
 
   useEffect(() => {
     const unsub = window.api.on('render-cut:progress', (raw) => {
@@ -208,7 +218,8 @@ export function EditTab() {
     setLastDiff(null)
     setRevisionHistory([])
     const apiKey = await window.api.getApiKey()
-    const result = await window.api.planEdit(transcript, aRollClips, bRollClips, settings, apiKey)
+    const effectiveSettings = { ...settings, anthropicModel: selectedModel }
+    const result = await window.api.planEdit(transcript, aRollClips, bRollClips, effectiveSettings, apiKey)
     if (!result.ok || !result.edl) {
       setPlanState({ status: 'error', message: result.error ?? 'Planning failed' })
       return
@@ -224,7 +235,8 @@ export function EditTab() {
     setLastDiff(null)
 
     const apiKey = await window.api.getApiKey()
-    const result = await window.api.reviseEdit(edl, transcript, aRollClips, bRollClips, request, settings, apiKey)
+    const effectiveSettings = { ...settings, anthropicModel: selectedModel }
+    const result = await window.api.reviseEdit(edl, transcript, aRollClips, bRollClips, request, effectiveSettings, apiKey)
 
     if (!result.ok || !result.edl) {
       setReviseState({ status: 'error', message: result.error ?? 'Revision failed' })
@@ -398,7 +410,7 @@ export function EditTab() {
           {edl && <EDLSummary edl={edl} />}
           {edl && <TimelineView edl={edl} />}
 
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap items-center">
             <button
               onClick={handlePlanEdit}
               disabled={isBusy}
@@ -406,6 +418,7 @@ export function EditTab() {
             >
               {edl ? 'Re-plan edit' : 'Plan edit with AI'}
             </button>
+            <ModelSelector settings={settings} value={selectedModel} onChange={setSelectedModel} />
             {edl && (<>
               <button
                 onClick={handleSaveAs}
@@ -481,7 +494,7 @@ export function EditTab() {
                     rows={3}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-blue-500 resize-none"
                   />
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <button
                       onClick={handleRevise}
                       disabled={isBusy || !reviseRequest.trim()}
@@ -489,6 +502,7 @@ export function EditTab() {
                     >
                       Apply revision
                     </button>
+                    <ModelSelector settings={settings} value={selectedModel} onChange={setSelectedModel} />
                     <span className="text-xs text-zinc-600">⌘↵ to submit</span>
                   </div>
                 </div>

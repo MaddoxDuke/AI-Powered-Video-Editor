@@ -252,30 +252,7 @@ export function SettingsTab() {
                 </div>
               </label>
               <LLMStatusBadge status={llmStatus} provider="anthropic" />
-              <label className="flex flex-col gap-1">
-                <span className="text-xs text-zinc-400">Model</span>
-                <div className="flex gap-2">
-                  {([
-                    { id: 'claude-sonnet-4-5', label: 'Sonnet 4.5', note: 'recommended · ~$0.10/edit' },
-                    { id: 'claude-opus-4-5',   label: 'Opus 4.5',   note: 'best quality · ~$0.48/edit' },
-                  ] as const).map(({ id, label, note }) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setLocalSettings((s) => ({ ...s, anthropicModel: id }))}
-                      className={`flex flex-col items-start px-3 py-2 rounded border text-xs transition-colors ${
-                        (localSettings.anthropicModel || 'claude-sonnet-4-5') === id
-                          ? 'bg-blue-600/20 border-blue-500 text-blue-300'
-                          : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200'
-                      }`}
-                    >
-                      <span className="font-medium">{label}</span>
-                      <span className="text-zinc-500 text-[10px]">{note}</span>
-                    </button>
-                  ))}
-                </div>
-              </label>
-              <p className="text-xs text-zinc-600">API key stored securely in macOS Keychain.</p>
+              <p className="text-xs text-zinc-600">API key stored securely in macOS Keychain. Model is chosen at each AI call site.</p>
             </div>
           )}
         </section>

@@ -44,6 +44,15 @@ A top-right card with a large number. Slides in from the right.
 8. **Max 2 kinetic-text.** Section transitions and dramatic reveals only.
 9. **Respect the edit.** Use the EDL rationale and the combined transcript timestamps to find moments where animation adds clarity — not visual noise.
 
+## Style variables
+If the user provided a style preference (text or image), use it to influence:
+- `accentColor` variable (CSS color string, e.g. `"#3b82f6"` for blue, `"#f97316"` for orange) — include in every cue's variables dict alongside `duration`
+- The text copy in `title`, `subtitle`, `text`, `label` etc — match the tone/register implied by the style
+- Cue placement and density — a "minimal" style preference means fewer cues
+
+If no style preference is given, use `"#f97316"` (orange) as `accentColor`.
+Always include `accentColor` in every cue's `variables` dict.
+
 ## Input format
 
 You will receive:

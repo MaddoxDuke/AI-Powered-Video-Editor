@@ -33,6 +33,7 @@ export type LLMRequest = {
   /** If set, force the model to call this tool (structured output) */
   forceTool?: string
   maxTokens?: number
+  visionImages?: Array<{ base64: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' }>
 }
 
 export type LLMResponse = {
@@ -78,14 +79,27 @@ async function callAnthropic(req: LLMRequest, apiKey: string, model = 'claude-so
         cache_control: { type: 'ephemeral' }
       }
     ],
-    messages: req.messages.map((m, i) => ({
-      role: m.role,
-      content:
-        // Cache the last user message (likely contains the long transcript)
-        i === req.messages.length - 1 && m.role === 'user'
+    messages: req.messages.map((m, i) => {
+      const isLastUser = i === req.messages.length - 1 && m.role === 'user'
+      if (isLastUser && req.visionImages && req.visionImages.length > 0) {
+        return {
+          role: m.role,
+          content: [
+            { type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const } },
+            ...req.visionImages.map((img) => ({
+              type: 'image' as const,
+              source: { type: 'base64' as const, media_type: img.mimeType, data: img.base64 }
+            }))
+          ]
+        }
+      }
+      return {
+        role: m.role,
+        content: isLastUser
           ? [{ type: 'text' as const, text: m.content, cache_control: { type: 'ephemeral' as const } }]
           : m.content
-    })),
+      }
+    }),
     ...(tools ? { tools } : {}),
     ...(toolChoice ? { tool_choice: toolChoice } : {})
   })

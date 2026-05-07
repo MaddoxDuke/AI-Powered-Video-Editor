@@ -49,8 +49,10 @@ const api = {
   edlLoadLast: () => ipcRenderer.invoke('edl-file:load-last'),
 
   // Animation planning + render
-  planAnimate: (edl: unknown, transcript: unknown, combinedDuration: number, settings: unknown, apiKey: string) =>
-    ipcRenderer.invoke('animate:plan', edl, transcript, combinedDuration, settings, apiKey),
+  planAnimate: (edl: unknown, transcript: unknown, combinedDuration: number, settings: unknown, apiKey: string, styleText?: string | null, styleImagePath?: string | null) =>
+    ipcRenderer.invoke('animate:plan', edl, transcript, combinedDuration, settings, apiKey, styleText, styleImagePath),
+  reviseAnimate: (plan: unknown, request: string, combinedDuration: number, settings: unknown, apiKey: string) =>
+    ipcRenderer.invoke('animate:revise', plan, request, combinedDuration, settings, apiKey),
   renderAnimations: (plan: unknown, combinedVideoPath: string, exportFolder: string) =>
     ipcRenderer.invoke('animate:render', plan, combinedVideoPath, exportFolder),
 

@@ -21,7 +21,7 @@ export const proposeAnimationPlanTool: LLMTool = {
             triggerText: { type: 'string', description: 'The spoken words that triggered this cue.' },
             variables: {
               type: 'object',
-              description: 'Kind-specific template variables. lower-third: {title,subtitle?}. callout: {text,subtext?}. kinetic-text: {text}. data-card: {label,value,unit?}.',
+              description: 'Variables: lower-third: {title, subtitle?, accentColor, duration}. callout: {text, subtext?, accentColor, duration}. kinetic-text: {text, accentColor, duration}. data-card: {label, value, unit?, accentColor, duration}.',
               additionalProperties: { type: 'string' }
             },
             reason: { type: 'string' }

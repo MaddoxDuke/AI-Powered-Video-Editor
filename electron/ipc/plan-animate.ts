@@ -167,6 +167,12 @@ function validateAnimationPlan(raw: unknown, combinedDuration: number): Animatio
   return { cues, rationale: obj.rationale }
 }
 
+function imageToVision(filePath: string): { base64: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' } {
+  const ext = require('path').extname(filePath).toLowerCase()
+  const mimeType = ext === '.png' ? 'image/png' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
+  return { base64: require('fs').readFileSync(filePath).toString('base64'), mimeType }
+}
+
 export function registerPlanAnimateHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(
     'animate:plan',
@@ -176,7 +182,9 @@ export function registerPlanAnimateHandlers(ipcMain: IpcMain): void {
       transcript: Transcript | null,
       combinedDuration: number,
       settings: AppSettings,
-      apiKey: string
+      apiKey: string,
+      styleText?: string | null,
+      styleImagePath?: string | null
     ) => {
       try {
         const systemPrompt = loadPrompt('plan-animate')
@@ -190,13 +198,21 @@ export function registerPlanAnimateHandlers(ipcMain: IpcMain): void {
         const durationMins = Math.floor(combinedDuration / 60)
         const durationSecs = Math.round(combinedDuration % 60)
 
-        const userMessage = [
+        let userMessage = [
           `Total combined video duration: ${durationMins}:${String(durationSecs).padStart(2, '0')} (${combinedDuration.toFixed(1)}s)`,
           '',
           `## EDL rationale\n${edl.rationale}`,
           '',
           combinedTranscript,
         ].join('\n')
+
+        if (styleText) {
+          userMessage += `\n\n## Animation style preference\n${styleText}`
+        }
+
+        if (styleImagePath && settings.llmProvider !== 'anthropic') {
+          userMessage += `\n(Style reference image provided but not supported by current LLM provider — describe the style in text instead.)`
+        }
 
         const modelLabel =
           settings.llmProvider === 'anthropic' ? (settings.anthropicModel || 'claude-sonnet-4-5')
@@ -206,13 +222,19 @@ export function registerPlanAnimateHandlers(ipcMain: IpcMain): void {
           '| provider:', settings.llmProvider,
           '| model:', modelLabel)
 
+        const visionImages =
+          styleImagePath && settings.llmProvider === 'anthropic'
+            ? [imageToVision(styleImagePath)]
+            : undefined
+
         const response = await llmCall(
           {
             system: systemPrompt,
             messages: [{ role: 'user', content: userMessage }],
             tools: [proposeAnimationPlanTool],
             forceTool: 'propose_animation_plan',
-            maxTokens: 2048
+            maxTokens: 2048,
+            ...(visionImages ? { visionImages } : {})
           },
           settings,
           apiKey,
@@ -226,6 +248,52 @@ export function registerPlanAnimateHandlers(ipcMain: IpcMain): void {
 
         const plan = validateAnimationPlan(toolCall.input, combinedDuration)
         return { ok: true, plan }
+      } catch (err: unknown) {
+        return { ok: false, error: (err as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'animate:revise',
+    async (
+      _event,
+      plan: AnimationPlan,
+      request: string,
+      combinedDuration: number,
+      settings: AppSettings,
+      apiKey: string
+    ) => {
+      try {
+        const systemPrompt = loadPrompt('revise-animate')
+
+        const userMessage = [
+          `## Current animation plan`,
+          JSON.stringify(plan, null, 2),
+          '',
+          `## Revision request`,
+          request,
+        ].join('\n')
+
+        const response = await llmCall(
+          {
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userMessage }],
+            tools: [proposeAnimationPlanTool],
+            forceTool: 'propose_animation_plan',
+            maxTokens: 2048
+          },
+          settings,
+          apiKey
+        )
+
+        const toolCall = response.toolCalls.find((t) => t.name === 'propose_animation_plan')
+        if (!toolCall) {
+          throw new Error('Model did not return a valid animation plan. Response: ' + response.text.slice(0, 500))
+        }
+
+        const revised = validateAnimationPlan(toolCall.input, combinedDuration)
+        return { ok: true, plan: revised }
       } catch (err: unknown) {
         return { ok: false, error: (err as Error).message }
       }
